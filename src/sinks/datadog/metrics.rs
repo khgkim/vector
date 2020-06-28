@@ -540,7 +540,7 @@ mod tests {
         let counts = vec![1; 20];
 
         assert_eq!(
-            Summary::new(&values, &counts, StatisticKind),
+            Summary::new(&values, &counts, StatisticKind::Histogram),
             Some(Summary {
                 min: 0.0,
                 max: 19.0,
@@ -559,7 +559,7 @@ mod tests {
         let counts = (1..5).collect::<Vec<_>>();
 
         assert_eq!(
-            Summary::new(&values, &counts, StatisticKind),
+            Summary::new(&values, &counts, StatisticKind::Histogram),
             Some(Summary {
                 min: 1.0,
                 max: 4.0,
@@ -578,7 +578,7 @@ mod tests {
         let counts = vec![1];
 
         assert_eq!(
-            Summary::new(&values, &counts, StatisticKind),
+            Summary::new(&values, &counts, StatisticKind::Histogram),
             Some(Summary {
                 min: 10.0,
                 max: 10.0,
@@ -594,28 +594,28 @@ mod tests {
     fn test_nan_stats() {
         let values = vec![1.0, std::f64::NAN];
         let counts = vec![1, 1];
-        assert!(Summary::new(&values, &counts, StatisticKind).is_some());
+        assert!(Summary::new(&values, &counts, StatisticKind::Histogram).is_some());
     }
 
     #[test]
     fn test_unequal_stats() {
         let values = vec![1.0];
         let counts = vec![1, 2, 3];
-        assert!(Summary::new(&values, &counts, StatisticKind).is_none());
+        assert!(Summary::new(&values, &counts, StatisticKind::Histogram).is_none());
     }
 
     #[test]
     fn test_empty_stats() {
         let values = vec![];
         let counts = vec![];
-        assert!(Summary::new(&values, &counts, StatisticKind).is_none());
+        assert!(Summary::new(&values, &counts, StatisticKind::Histogram).is_none());
     }
 
     #[test]
     fn test_zero_counts_stats() {
         let values = vec![1.0, 2.0];
         let counts = vec![0, 0];
-        assert!(Summary::new(&values, &counts, StatisticKind).is_none());
+        assert!(Summary::new(&values, &counts, StatisticKind::Histogram).is_none());
     }
 
     #[test]
