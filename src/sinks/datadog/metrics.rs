@@ -8,6 +8,7 @@ use crate::{
         service2::TowerRequestConfig,
         BatchConfig, BatchSettings, MetricBuffer,
     },
+    statistic::Summary,
     topology::config::{DataType, SinkConfig, SinkContext, SinkDescription},
 };
 use chrono::{DateTime, Utc};
@@ -17,7 +18,6 @@ use http::{uri::InvalidUri, Request, StatusCode, Uri};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicI64, Ordering::SeqCst};
 
@@ -87,17 +87,6 @@ pub enum DatadogMetricType {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct DatadogPoint(i64, f64);
-
-#[derive(Debug, Clone, PartialEq)]
-struct DatadogStats {
-    min: f64,
-    max: f64,
-    median: f64,
-    avg: f64,
-    sum: f64,
-    count: f64,
-    quantiles: Vec<(f64, f64)>,
-}
 
 inventory::submit! {
     SinkDescription::new::<DatadogConfig>("datadog_metrics")
@@ -223,61 +212,6 @@ fn encode_namespace(namespace: &str, name: &str) -> String {
     }
 }
 
-fn stats(values: &[f64], counts: &[u32], percentile: &[f64]) -> Option<DatadogStats> {
-    if values.len() != counts.len() {
-        return None;
-    }
-
-    let mut samples = Vec::new();
-    for (v, c) in values.iter().zip(counts.iter()) {
-        for _ in 0..*c {
-            samples.push(*v);
-        }
-    }
-
-    if samples.is_empty() {
-        return None;
-    }
-
-    if samples.len() == 1 {
-        let val = samples[0];
-        return Some(DatadogStats {
-            min: val,
-            max: val,
-            median: val,
-            avg: val,
-            sum: val,
-            count: 1.0,
-            quantiles: vec![(0.95, val)],
-        });
-    }
-
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-
-    let length = samples.len() as f64;
-    let min = samples.first().unwrap();
-    let max = samples.last().unwrap();
-
-    let p50 = samples[(0.50 * length - 1.0).round() as usize];
-    let quantiles = percentile
-        .iter()
-        .map(|&p| (p, samples[(p * length - 1.0).round() as usize]))
-        .collect();
-
-    let sum = samples.iter().sum();
-    let avg = sum / length;
-
-    Some(DatadogStats {
-        min: *min,
-        max: *max,
-        median: p50,
-        avg,
-        sum,
-        count: length,
-        quantiles,
-    })
-}
-
 fn encode_events(events: Vec<Metric>, interval: i64, namespace: &str) -> DatadogRequest {
     let series = events
         .into_iter()
@@ -299,7 +233,7 @@ fn encode_events(events: Vec<Metric>, interval: i64, namespace: &str) -> Datadog
                         sample_rates,
                         statistic,
                     } => {
-                        stats(&values, &sample_rates, statistic.percentile()).map(|s| {
+                        Summary::new(&values, &sample_rates, statistic).map(|s| {
                             let metric = |metric, r#type, value| DatadogMetric {
                                 metric,
                                 r#type,
@@ -427,6 +361,7 @@ mod tests {
     use super::*;
     use crate::event::metric::{Metric, MetricKind, MetricValue, StatisticKind};
     use crate::sinks::util::{http::HttpSink, test::load_sink};
+    use crate::statistic::Summary;
     use crate::test_util::runtime;
     use chrono::offset::TimeZone;
     use chrono::Utc;
@@ -605,8 +540,8 @@ mod tests {
         let counts = vec![1; 20];
 
         assert_eq!(
-            stats(&values, &counts, &[0.95]),
-            Some(DatadogStats {
+            Summary::new(&values, &counts, StatisticKind),
+            Some(Summary {
                 min: 0.0,
                 max: 19.0,
                 median: 9.0,
@@ -624,8 +559,8 @@ mod tests {
         let counts = (1..5).collect::<Vec<_>>();
 
         assert_eq!(
-            stats(&values, &counts, &[0.95]),
-            Some(DatadogStats {
+            Summary::new(&values, &counts, StatisticKind),
+            Some(Summary {
                 min: 1.0,
                 max: 4.0,
                 median: 3.0,
@@ -643,8 +578,8 @@ mod tests {
         let counts = vec![1];
 
         assert_eq!(
-            stats(&values, &counts, &[0.95]),
-            Some(DatadogStats {
+            Summary::new(&values, &counts, StatisticKind),
+            Some(Summary {
                 min: 10.0,
                 max: 10.0,
                 median: 10.0,
@@ -659,28 +594,28 @@ mod tests {
     fn test_nan_stats() {
         let values = vec![1.0, std::f64::NAN];
         let counts = vec![1, 1];
-        assert!(stats(&values, &counts, &[0.95]).is_some());
+        assert!(Summary::new(&values, &counts, StatisticKind).is_some());
     }
 
     #[test]
     fn test_unequal_stats() {
         let values = vec![1.0];
         let counts = vec![1, 2, 3];
-        assert!(stats(&values, &counts, &[0.95]).is_none());
+        assert!(Summary::new(&values, &counts, StatisticKind).is_none());
     }
 
     #[test]
     fn test_empty_stats() {
         let values = vec![];
         let counts = vec![];
-        assert!(stats(&values, &counts, &[0.95]).is_none());
+        assert!(Summary::new(&values, &counts, StatisticKind).is_none());
     }
 
     #[test]
     fn test_zero_counts_stats() {
         let values = vec![1.0, 2.0];
         let counts = vec![0, 0];
-        assert!(stats(&values, &counts, &[0.95]).is_none());
+        assert!(Summary::new(&values, &counts, StatisticKind).is_none());
     }
 
     #[test]
