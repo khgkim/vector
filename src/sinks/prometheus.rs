@@ -145,11 +145,11 @@ fn encode_metric_header(namespace: &str, metric: &Metric) -> String {
     let r#type = match &metric.value {
         MetricValue::Counter { .. } => "counter",
         MetricValue::Gauge { .. } => "gauge",
-        MetricValue::Distribution {
+        MetricValue::Samples {
             statistic: StatisticKind::Histogram,
             ..
         } => "histogram",
-        MetricValue::Distribution {
+        MetricValue::Samples {
             statistic: StatisticKind::Distribution,
             ..
         } => "distribution",
@@ -182,7 +182,7 @@ fn encode_metric_datum(namespace: &str, buckets: &[f64], expired: bool, metric: 
                 let value = if expired { 0 } else { values.len() };
                 s.push_str(&format!("{}{} {}\n", fullname, encode_tags(tags), value));
             }
-            MetricValue::Distribution {
+            MetricValue::Samples {
                 values,
                 sample_rates,
                 statistic: StatisticKind::Histogram,
@@ -225,7 +225,7 @@ fn encode_metric_datum(namespace: &str, buckets: &[f64], expired: bool, metric: 
                 s.push_str(&format!("{}_sum{} {}\n", fullname, tags, sum));
                 s.push_str(&format!("{}_count{} {}\n", fullname, tags, count));
             }
-            MetricValue::Distribution {
+            MetricValue::Samples {
                 values,
                 sample_rates,
                 statistic: StatisticKind::Distribution,
@@ -549,7 +549,7 @@ mod tests {
             timestamp: None,
             tags: None,
             kind: MetricKind::Absolute,
-            value: MetricValue::Distribution {
+            value: MetricValue::Samples {
                 values: vec![1.0, 2.0, 3.0],
                 sample_rates: vec![3, 3, 2],
                 statistic: StatisticKind::Histogram,
@@ -573,7 +573,7 @@ mod tests {
             timestamp: None,
             tags: None,
             kind: MetricKind::Absolute,
-            value: MetricValue::Distribution {
+            value: MetricValue::Samples {
                 values: vec![1.0, 2.0, 3.0],
                 sample_rates: vec![3, 3, 2],
                 statistic: StatisticKind::Distribution,
